@@ -1,0 +1,31 @@
+[lint]
+# すべてのルールを有効化（必要に応じて絞る）
+select = ["ALL"]
+
+# 型チェック関係も有効化
+extend-select = [
+    "ANN", # 型アノテーション
+    "FA",  # 型チェック関連の一部
+    "I",
+]
+
+# 不要なチェックは無効化
+ignore = [
+    "E501",
+    "T201",
+    "BLE001", # 行長制限
+    "D",    # ドキュメンテーション文字列のチェック
+    "CPY001", # 先頭にコピーライト
+]
+
+[format]
+# Black 互換の整形
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+skip-magic-trailing-comma = false
+
+
+[lint.isort]
+# isort 相当の設定
+combine-as-imports = true

@@ -1,6 +1,3 @@
-def main():
-    print("Hello from fastapi-passkey-impl!")
+from fastapi import FastAPI
 
-
-if __name__ == "__main__":
-    main()
+app = FastAPI()
