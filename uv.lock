@@ -482,6 +482,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "fastapi", extra = ["standard"] },
+    { name = "python-dotenv" },
     { name = "sqlmodel" },
     { name = "webauthn" },
 ]
@@ -496,6 +497,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", extras = ["standard"], specifier = ">=0.143.3" },
+    { name = "python-dotenv", specifier = ">=1.2.4" },
     { name = "sqlmodel", specifier = ">=0.0.48" },
     { name = "webauthn", specifier = ">=3.0.1" },
 ]

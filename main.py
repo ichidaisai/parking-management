@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Annotated, Any
 from uuid import UUID, uuid4
 
+from dotenv import load_dotenv
 from fastapi import (
     APIRouter,
     Depends,
@@ -37,10 +38,13 @@ from webauthn.helpers.structs import (
     UserVerificationRequirement,
 )
 
-from db import engine, get_session
-from db.auth import AuthChallenge, AuthenticationChallenge, AuthSession
-from db.users import User
-from lib.pk import save_passkey, verify_passkey_login
+# Load project settings before importing db, which creates the engine on import.
+load_dotenv(Path(__file__).resolve().with_name(".env"), override=False)
+
+from db import engine, get_session  # noqa: E402
+from db.auth import AuthChallenge, AuthenticationChallenge, AuthSession  # noqa: E402
+from db.users import User  # noqa: E402
+from lib.pk import save_passkey, verify_passkey_login  # noqa: E402
 
 RP_ID = os.getenv("RP_ID", "localhost")
 RP_NAME = os.getenv("RP_NAME", "FastAPI Passkey")
