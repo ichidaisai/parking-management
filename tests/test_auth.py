@@ -22,6 +22,8 @@ import main
 from db import enable_foreign_keys, get_session
 from db.auth import AuthChallenge, AuthenticationChallenge, AuthSession
 from db.users import PasskeyCredential, User
+from handlers import auth as auth_handlers
+from lib import pk
 
 
 class AuthenticatorOverrides(TypedDict, total=False):
@@ -124,10 +126,10 @@ class AuthTests(unittest.TestCase):
         event.listen(self.engine, "connect", enable_foreign_keys)
         self.addCleanup(self.engine.dispose)
         self.enterContext(patch.object(main, "engine", self.engine))
-        self.enterContext(patch.object(main, "RP_ID", "localhost"))
-        self.enterContext(patch.object(main, "RP_ORIGIN", "http://localhost:8000"))
-        self.enterContext(patch.object(main, "COOKIE_SECURE", new=False))
-        self.enterContext(patch.object(main, "INVITATION_CODE", "test-invitation"))
+        self.enterContext(patch.object(pk, "RP_ID", "localhost"))
+        self.enterContext(patch.object(pk, "RP_ORIGIN", "http://localhost:8000"))
+        self.enterContext(patch.object(pk, "COOKIE_SECURE", new=False))
+        self.enterContext(patch.object(pk, "INVITATION_CODE", "test-invitation"))
 
         def test_session() -> Iterator[Session]:
             with Session(self.engine) as session:
@@ -154,7 +156,9 @@ class AuthTests(unittest.TestCase):
         authenticator = SoftwareAuthenticator()
         options = self.registration_options(username)
         self.assertEqual(options.status_code, 200)
-        self.assertEqual(options.json()["authenticatorSelection"]["residentKey"], "required")
+        self.assertEqual(
+            options.json()["authenticatorSelection"]["residentKey"], "required",
+        )
         response = self.client.post(
             "/auth/user/register/verify",
             json=authenticator.registration(options.json()),
@@ -173,13 +177,15 @@ class AuthTests(unittest.TestCase):
         profile = self.client.get("/auth/user/me")
         self.assertEqual(profile.status_code, 200)
         self.assertEqual(profile.json()["username"], "alice")
-        old_token = self.client.cookies[main.SESSION_COOKIE]
+        old_token = self.client.cookies[auth_handlers.SESSION_COOKIE]
         options = self.login_options()
         self.assertEqual(options.get("allowCredentials", []), [])
         credential = authenticator.authentication(options)
         response = self.client.post("/auth/user/verify", json=credential)
         self.assertEqual(response.status_code, 200, response.text)
-        self.assertNotEqual(old_token, self.client.cookies[main.SESSION_COOKIE])
+        self.assertNotEqual(
+            old_token, self.client.cookies[auth_handlers.SESSION_COOKIE],
+        )
         with Session(self.engine) as session:
             user = session.exec(select(User)).one()
             passkey = session.exec(select(PasskeyCredential)).one()
@@ -187,14 +193,14 @@ class AuthTests(unittest.TestCase):
             self.assertEqual(passkey.user_id, user.id)
             self.assertEqual(passkey.sign_count, 1)
             self.assertIsNotNone(passkey.last_used_at)
-            self.assertIsNone(session.get(AuthSession, main.token_hash(old_token)))
+            self.assertIsNone(session.get(AuthSession, pk.token_hash(old_token)))
         self.assertEqual(
             self.client.post("/auth/user/verify", json=credential).status_code,
             400,
         )
-        token = self.client.cookies[main.SESSION_COOKIE]
+        token = self.client.cookies[auth_handlers.SESSION_COOKIE]
         self.assertEqual(self.client.post("/auth/user/logout").status_code, 204)
-        self.client.cookies.set(main.SESSION_COOKIE, token, path="/")
+        self.client.cookies.set(auth_handlers.SESSION_COOKIE, token, path="/")
         self.assertEqual(self.client.get("/auth/user/me").status_code, 401)
 
     def test_username_validation(self) -> None:
@@ -229,7 +235,8 @@ class AuthTests(unittest.TestCase):
         options = self.registration_options().json()
         credential = SoftwareAuthenticator().registration(options)
         with TestClient(
-            main.app, headers={"X-Invitation-Code": "test-invitation"},
+            main.app,
+            headers={"X-Invitation-Code": "test-invitation"},
         ) as other:
             response = other.post("/auth/user/register/verify", json=credential)
             self.assertEqual(response.status_code, 400)
@@ -275,7 +282,8 @@ class AuthTests(unittest.TestCase):
 
     def test_concurrent_pending_username_registration(self) -> None:
         with TestClient(
-            main.app, headers={"X-Invitation-Code": "test-invitation"},
+            main.app,
+            headers={"X-Invitation-Code": "test-invitation"},
         ) as other:
             options = self.registration_options().json()
             other_options = self.registration_options(client=other).json()
@@ -301,11 +309,14 @@ class AuthTests(unittest.TestCase):
         self.client.post("/auth/user/logout")
         for authenticator, username in [(alice, "alice"), (bob, "bob")]:
             response = self.client.post(
-                "/auth/user/verify", json=authenticator.authentication(self.login_options()),
+                "/auth/user/verify",
+                json=authenticator.authentication(self.login_options()),
             )
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json()["username"], username)
-            self.assertEqual(self.client.get("/auth/user/me").json()["username"], username)
+            self.assertEqual(
+                self.client.get("/auth/user/me").json()["username"], username,
+            )
             self.client.post("/auth/user/logout")
 
     def test_login_rejects_wrong_or_missing_user_handle(self) -> None:
@@ -315,7 +326,8 @@ class AuthTests(unittest.TestCase):
             credential = alice.authentication(self.login_options())
             credential["response"]["userHandle"] = user_handle
             self.assertEqual(
-                self.client.post("/auth/user/verify", json=credential).status_code, 403,
+                self.client.post("/auth/user/verify", json=credential).status_code,
+                403,
             )
 
     def test_login_rejects_unknown_credential(self) -> None:
@@ -381,13 +393,17 @@ class AuthTests(unittest.TestCase):
         authenticator = self.register()
         credential = authenticator.authentication(self.login_options())
         with TestClient(main.app) as other:
-            self.assertEqual(other.post("/auth/user/verify", json=credential).status_code, 400)
+            self.assertEqual(
+                other.post("/auth/user/verify", json=credential).status_code, 400,
+            )
         with Session(self.engine) as session:
             challenge = session.exec(select(AuthenticationChallenge)).one()
             challenge.expires_at = 0
             session.add(challenge)
             session.commit()
-        self.assertEqual(self.client.post("/auth/user/verify", json=credential).status_code, 400)
+        self.assertEqual(
+            self.client.post("/auth/user/verify", json=credential).status_code, 400,
+        )
 
     def test_session_expires(self) -> None:
         self.register()
@@ -438,7 +454,8 @@ class AuthTests(unittest.TestCase):
                 self.assertNotIn("challenge", response.json())
         self.assertIn(
             self.client.get(
-                "/auth/user/register", params={"username": "alice"},
+                "/auth/user/register",
+                params={"username": "alice"},
             ).status_code,
             [404, 405],
         )
@@ -472,11 +489,12 @@ class AuthTests(unittest.TestCase):
     def test_missing_invitation_configuration_disables_registration(self) -> None:
         options = self.registration_options().json()
         credential = SoftwareAuthenticator().registration(options)
-        with patch.object(main, "INVITATION_CODE", ""):
+        with patch.object(pk, "INVITATION_CODE", ""):
             self.assertEqual(self.registration_options().status_code, 503)
             self.assertEqual(
                 self.client.post(
-                    "/auth/user/register/verify", json=credential,
+                    "/auth/user/register/verify",
+                    json=credential,
                 ).status_code,
                 503,
             )
@@ -487,10 +505,11 @@ class AuthTests(unittest.TestCase):
     def test_invitation_rotation_invalidates_old_code(self) -> None:
         options = self.registration_options().json()
         credential = SoftwareAuthenticator().registration(options)
-        with patch.object(main, "INVITATION_CODE", "new-invitation"):
+        with patch.object(pk, "INVITATION_CODE", "new-invitation"):
             self.assertEqual(
                 self.client.post(
-                    "/auth/user/register/verify", json=credential,
+                    "/auth/user/register/verify",
+                    json=credential,
                 ).status_code,
                 403,
             )
@@ -500,7 +519,7 @@ class AuthTests(unittest.TestCase):
     def test_invitation_can_be_reused_for_multiple_accounts(self) -> None:
         self.register("alice")
         self.register("bob")
-        self.assertEqual(main.INVITATION_CODE, "test-invitation")
+        self.assertEqual(pk.INVITATION_CODE, "test-invitation")
         with Session(self.engine) as session:
             self.assertEqual(
                 {user.username for user in session.exec(select(User)).all()},
@@ -543,7 +562,8 @@ class AuthTests(unittest.TestCase):
                 self.assertEqual(response.headers["cache-control"], "no-store")
         self.client.post("/auth/user/logout")
         self.assertEqual(
-            self.client.get("/mypage/", follow_redirects=False).status_code, 303,
+            self.client.get("/mypage/", follow_redirects=False).status_code,
+            303,
         )
 
 

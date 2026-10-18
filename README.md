@@ -51,8 +51,8 @@ API仕様は、起動後に [Swagger UI](http://localhost:8000/docs) で確認�
 ```sh
 uv run python -m unittest discover -s tests -v
 node --test tests/test_web.mjs
-uv run ruff check main.py db/__init__.py db/auth.py lib tests
-uv run ty check main.py db lib tests
+uv run ruff check main.py db/__init__.py db/auth.py lib handlers tests
+uv run ty check main.py db lib handlers tests
 ```
 
 </details>
