@@ -13,4 +13,5 @@ dependencies = [
 dev = [
     "pylance>=13.0.0",
     "ruff>=0.17.1",
+    "ty>=0.0.89",
 ]
