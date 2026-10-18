@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>登録完了</title>
+    <link rel="stylesheet" href="/lib/dads-components-bundle.css" />
+    <script src="/lib/dads-components-bundle.js"></script>
+    <link rel="stylesheet" href="/auth.css" />
+    <style>
+      body {
+        font-family: "Noto Sans JP", sans-serif;
+        max-width: 38rem;
+        padding: 2rem;
+        margin: auto;
+      }
+
+      .container {
+        margin-top: 2rem;
+      }
+      .container > * {
+        margin-bottom: 1rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>設定完了</h1>
+    <div class="container">
+      <img
+        src="/images/thumb.jpeg"
+        alt="スマートフォンにチェックマークの画像"
+        style="width: 100%; height: auto"
+      />
+      <div
+        class="dads-step-navigation"
+        data-orientation="horizontal"
+        data-size="normal"
+        style="--_width: 320; --_step-min-width: 160"
+      >
+        <p class="dads-u-visually-hidden">
+          全2ステップ中、2ステップ目まで到達済み
+        </p>
+        <ul>
+          <li
+            class="dads-step-navigation__step"
+            data-state="completed"
+            data-first
+          >
+            <span class="dads-step-navigation__header">
+              <span class="dads-u-visually-hidden">ステップ</span>
+              <span class="dads-step-navigation__number">1</span>
+              <span class="dads-step-navigation__title">アカウント作成</span>
+            </span>
+            <p class="dads-step-navigation__description">
+              パスキーを設定します
+            </p>
+          </li>
+          <li
+            class="dads-step-navigation__step"
+            aria-current="true"
+            data-state="reached"
+            data-last
+          >
+            <span class="dads-step-navigation__header">
+              <span class="dads-u-visually-hidden">ステップ</span>
+              <span class="dads-step-navigation__number">2</span>
+              <span class="dads-step-navigation__title">完了</span>
+            </span>
+            <p class="dads-step-navigation__description">
+              パスキーが正常に設定されました
+            </p>
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <a
+      href="/mypage/"
+      class="dads-button auth-link"
+      data-size="lg"
+      data-type="solid-fill"
+    >
+      マイページへ
+    </a>
+  </body>
+</html>
