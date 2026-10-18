@@ -11,5 +11,6 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "pylance>=13.0.0",
     "ruff>=0.17.1",
 ]
