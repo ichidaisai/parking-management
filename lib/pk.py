@@ -1,6 +1,5 @@
 import json
 from typing import Any
-from uuid import UUID
 
 from sqlmodel import Session, select
 from webauthn import verify_authentication_response
@@ -33,14 +32,13 @@ def save_passkey(
     return passkey
 
 
-def verify_passkey_login(  # noqa: PLR0913 - Verification binds RP, origin and account explicitly.
+def verify_passkey_login(
     session: Session,
     credential: dict[str, Any],
     challenge: bytes,
     *,
     expected_rp_id: str,
     expected_origin: str,
-    expected_user_id: UUID,
 ) -> User:
     parsed_credential = parse_authentication_credential_json(credential)
     credential_id = bytes_to_base64url(parsed_credential.raw_id)
@@ -51,7 +49,7 @@ def verify_passkey_login(  # noqa: PLR0913 - Verification binds RP, origin and a
         ),
     ).first()
 
-    if passkey is None or passkey.user_id != expected_user_id:
+    if passkey is None:
         msg = "Unknown passkey"
         raise ValueError(msg)
 
@@ -61,7 +59,8 @@ def verify_passkey_login(  # noqa: PLR0913 - Verification binds RP, origin and a
         raise ValueError(msg)
 
     user_handle = parsed_credential.response.user_handle
-    if user_handle is not None and user_handle != user.id.bytes:
+    # Discoverable credentials must return the user handle for the selected account.
+    if user_handle != user.id.bytes:
         msg = "User handle does not match the account"
         raise ValueError(msg)
 

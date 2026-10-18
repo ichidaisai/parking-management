@@ -13,13 +13,14 @@ import cbor2
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi.testclient import TestClient
+from httpx import Response
 from sqlalchemy import event
 from sqlmodel import Session, create_engine, select
 from webauthn.helpers import bytes_to_base64url
 
 import main
 from db import enable_foreign_keys, get_session
-from db.auth import AuthChallenge, AuthSession
+from db.auth import AuthChallenge, AuthenticationChallenge, AuthSession
 from db.users import PasskeyCredential, User
 
 
@@ -126,6 +127,7 @@ class AuthTests(unittest.TestCase):
         self.enterContext(patch.object(main, "RP_ID", "localhost"))
         self.enterContext(patch.object(main, "RP_ORIGIN", "http://localhost:8000"))
         self.enterContext(patch.object(main, "COOKIE_SECURE", new=False))
+        self.enterContext(patch.object(main, "INVITATION_CODE", "test-invitation"))
 
         def test_session() -> Iterator[Session]:
             with Session(self.engine) as session:
@@ -133,12 +135,26 @@ class AuthTests(unittest.TestCase):
 
         main.app.dependency_overrides[get_session] = test_session
         self.addCleanup(main.app.dependency_overrides.clear)
-        self.client = self.enterContext(TestClient(main.app))
+        self.client = self.enterContext(
+            TestClient(main.app, headers={"X-Invitation-Code": "test-invitation"}),
+        )
+
+    def registration_options(
+        self,
+        username: str = "alice",
+        *,
+        client: TestClient | None = None,
+    ) -> Response:
+        return (client or self.client).post(
+            "/auth/user/register",
+            json={"username": username, "invitation_code": "test-invitation"},
+        )
 
     def register(self, username: str = "alice") -> SoftwareAuthenticator:
         authenticator = SoftwareAuthenticator()
-        options = self.client.get("/auth/user/register", params={"username": username})
+        options = self.registration_options(username)
         self.assertEqual(options.status_code, 200)
+        self.assertEqual(options.json()["authenticatorSelection"]["residentKey"], "required")
         response = self.client.post(
             "/auth/user/register/verify",
             json=authenticator.registration(options.json()),
@@ -147,8 +163,8 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(response.status_code, 303, response.text)
         return authenticator
 
-    def login_options(self, username: str = "alice") -> dict[str, Any]:
-        response = self.client.post("/auth/user/login", json={"username": username})
+    def login_options(self) -> dict[str, Any]:
+        response = self.client.post("/auth/user/login")
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()
 
@@ -159,10 +175,7 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(profile.json()["username"], "alice")
         old_token = self.client.cookies[main.SESSION_COOKIE]
         options = self.login_options()
-        self.assertEqual(
-            options["allowCredentials"][0]["id"],
-            bytes_to_base64url(authenticator.credential_id),
-        )
+        self.assertEqual(options.get("allowCredentials", []), [])
         credential = authenticator.authentication(options)
         response = self.client.post("/auth/user/verify", json=credential)
         self.assertEqual(response.status_code, 200, response.text)
@@ -176,23 +189,18 @@ class AuthTests(unittest.TestCase):
             self.assertIsNotNone(passkey.last_used_at)
             self.assertIsNone(session.get(AuthSession, main.token_hash(old_token)))
         self.assertEqual(
-            self.client.post("/auth/user/verify", json=credential).status_code, 400,
+            self.client.post("/auth/user/verify", json=credential).status_code,
+            400,
         )
         token = self.client.cookies[main.SESSION_COOKIE]
         self.assertEqual(self.client.post("/auth/user/logout").status_code, 204)
-        self.client.cookies.set(main.SESSION_COOKIE, token, path="/auth")
+        self.client.cookies.set(main.SESSION_COOKIE, token, path="/")
         self.assertEqual(self.client.get("/auth/user/me").status_code, 401)
 
     def test_username_validation(self) -> None:
         for username in ["alice@example.com", "", "two words", "a" * 101]:
             with self.subTest(username=username):
-                response = self.client.get(
-                    "/auth/user/register", params={"username": username},
-                )
-                self.assertEqual(response.status_code, 422)
-                response = self.client.post(
-                    "/auth/user/login", json={"username": username},
-                )
+                response = self.registration_options(username)
                 self.assertEqual(response.status_code, 422)
         self.register("ユーザー_01")
 
@@ -204,13 +212,12 @@ class AuthTests(unittest.TestCase):
         ]
         for changes in cases:
             with self.subTest(changes=changes):
-                options = self.client.get(
-                    "/auth/user/register", params={"username": "alice"},
-                ).json()
+                options = self.registration_options().json()
                 credential = SoftwareAuthenticator().registration(options, **changes)
                 self.assertEqual(
                     self.client.post(
-                        "/auth/user/register/verify", json=credential,
+                        "/auth/user/register/verify",
+                        json=credential,
                     ).status_code,
                     400,
                 )
@@ -219,18 +226,20 @@ class AuthTests(unittest.TestCase):
                     self.assertEqual(session.exec(select(PasskeyCredential)).all(), [])
 
     def test_challenge_is_bound_to_browser_and_used_once(self) -> None:
-        options = self.client.get(
-            "/auth/user/register", params={"username": "alice"},
-        ).json()
+        options = self.registration_options().json()
         credential = SoftwareAuthenticator().registration(options)
-        with TestClient(main.app) as other:
+        with TestClient(
+            main.app, headers={"X-Invitation-Code": "test-invitation"},
+        ) as other:
             response = other.post("/auth/user/register/verify", json=credential)
             self.assertEqual(response.status_code, 400)
         response = self.client.post(
-            "/auth/user/register/verify", json=credential, follow_redirects=False,
+            "/auth/user/register/verify",
+            json=credential,
+            follow_redirects=False,
         )
         self.assertEqual(response.status_code, 303)
-        self.assertEqual(response.headers["location"], "/auth/user/me")
+        self.assertEqual(response.headers["location"], "/register/complete.html")
         self.assertIn("HttpOnly", response.headers["set-cookie"])
         self.assertEqual(
             self.client.post("/auth/user/register/verify", json=credential).status_code,
@@ -238,9 +247,7 @@ class AuthTests(unittest.TestCase):
         )
 
     def test_expired_challenge(self) -> None:
-        options = self.client.get(
-            "/auth/user/register", params={"username": "alice"},
-        ).json()
+        options = self.registration_options().json()
         credential = SoftwareAuthenticator().registration(options)
         with Session(self.engine) as session:
             challenge = session.exec(select(AuthChallenge)).one()
@@ -254,26 +261,24 @@ class AuthTests(unittest.TestCase):
 
     def test_duplicate_passkey_rolls_back_new_user(self) -> None:
         authenticator = self.register()
-        options = self.client.get(
-            "/auth/user/register", params={"username": "bob"},
-        ).json()
+        options = self.registration_options("bob").json()
         response = self.client.post(
-            "/auth/user/register/verify", json=authenticator.registration(options),
+            "/auth/user/register/verify",
+            json=authenticator.registration(options),
         )
         self.assertEqual(response.status_code, 409)
         with Session(self.engine) as session:
             self.assertEqual(
-                [user.username for user in session.exec(select(User)).all()], ["alice"],
+                [user.username for user in session.exec(select(User)).all()],
+                ["alice"],
             )
 
     def test_concurrent_pending_username_registration(self) -> None:
-        with TestClient(main.app) as other:
-            options = self.client.get(
-                "/auth/user/register", params={"username": "alice"},
-            ).json()
-            other_options = other.get(
-                "/auth/user/register", params={"username": "alice"},
-            ).json()
+        with TestClient(
+            main.app, headers={"X-Invitation-Code": "test-invitation"},
+        ) as other:
+            options = self.registration_options().json()
+            other_options = self.registration_options(client=other).json()
             response = self.client.post(
                 "/auth/user/register/verify",
                 json=SoftwareAuthenticator().registration(options),
@@ -286,24 +291,42 @@ class AuthTests(unittest.TestCase):
             )
             self.assertEqual(response.status_code, 409)
         self.assertEqual(
-            self.client.get(
-                "/auth/user/register", params={"username": "alice"},
-            ).status_code,
+            self.registration_options().status_code,
             409,
         )
 
-    def test_login_cannot_switch_account(self) -> None:
+    def test_login_identifies_selected_account(self) -> None:
         alice = self.register()
         bob = self.register("bob")
+        self.client.post("/auth/user/logout")
+        for authenticator, username in [(alice, "alice"), (bob, "bob")]:
+            response = self.client.post(
+                "/auth/user/verify", json=authenticator.authentication(self.login_options()),
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["username"], username)
+            self.assertEqual(self.client.get("/auth/user/me").json()["username"], username)
+            self.client.post("/auth/user/logout")
+
+    def test_login_rejects_wrong_or_missing_user_handle(self) -> None:
+        alice = self.register()
+        bob = self.register("bob")
+        for user_handle in [bob.user_handle, None, ""]:
+            credential = alice.authentication(self.login_options())
+            credential["response"]["userHandle"] = user_handle
+            self.assertEqual(
+                self.client.post("/auth/user/verify", json=credential).status_code, 403,
+            )
+
+    def test_login_rejects_unknown_credential(self) -> None:
+        authenticator = self.register()
+        unknown = SoftwareAuthenticator()
+        unknown.user_handle = authenticator.user_handle
         response = self.client.post(
-            "/auth/user/verify", json=bob.authentication(self.login_options()),
+            "/auth/user/verify",
+            json=unknown.authentication(self.login_options()),
         )
         self.assertEqual(response.status_code, 403)
-        credential = alice.authentication(self.login_options())
-        credential["response"]["userHandle"] = bob.user_handle
-        self.assertEqual(
-            self.client.post("/auth/user/verify", json=credential).status_code, 403,
-        )
 
     def test_login_rejects_invalid_origin_rp_uv_and_signature(self) -> None:
         authenticator = self.register()
@@ -315,7 +338,8 @@ class AuthTests(unittest.TestCase):
         for changes in cases:
             with self.subTest(changes=changes):
                 credential = authenticator.authentication(
-                    self.login_options(), **changes,
+                    self.login_options(),
+                    **changes,
                 )
                 self.assertEqual(
                     self.client.post("/auth/user/verify", json=credential).status_code,
@@ -324,11 +348,13 @@ class AuthTests(unittest.TestCase):
         credential = authenticator.authentication(self.login_options())
         credential["response"]["signature"] = bytes_to_base64url(b"invalid signature")
         self.assertEqual(
-            self.client.post("/auth/user/verify", json=credential).status_code, 403,
+            self.client.post("/auth/user/verify", json=credential).status_code,
+            403,
         )
         with Session(self.engine) as session:
             self.assertEqual(
-                session.exec(select(PasskeyCredential)).one().sign_count, 0,
+                session.exec(select(PasskeyCredential)).one().sign_count,
+                0,
             )
 
     def test_inactive_user_cannot_authenticate(self) -> None:
@@ -340,15 +366,28 @@ class AuthTests(unittest.TestCase):
             session.add(user)
             session.commit()
         self.assertEqual(
-            self.client.post("/auth/user/verify", json=credential).status_code, 403,
-        )
-        self.assertEqual(self.client.get("/auth/user/me").status_code, 401)
-        self.assertEqual(
-            self.client.post(
-                "/auth/user/login", json={"username": "alice"},
-            ).status_code,
+            self.client.post("/auth/user/verify", json=credential).status_code,
             403,
         )
+        self.assertEqual(self.client.get("/auth/user/me").status_code, 401)
+
+    def test_login_options_do_not_reveal_registered_accounts(self) -> None:
+        options = self.login_options()
+        self.assertNotIn("user", options)
+        self.assertEqual(options.get("allowCredentials", []), [])
+        self.assertEqual(options["userVerification"], "required")
+
+    def test_login_challenge_expires_and_is_bound_to_browser(self) -> None:
+        authenticator = self.register()
+        credential = authenticator.authentication(self.login_options())
+        with TestClient(main.app) as other:
+            self.assertEqual(other.post("/auth/user/verify", json=credential).status_code, 400)
+        with Session(self.engine) as session:
+            challenge = session.exec(select(AuthenticationChallenge)).one()
+            challenge.expires_at = 0
+            session.add(challenge)
+            session.commit()
+        self.assertEqual(self.client.post("/auth/user/verify", json=credential).status_code, 400)
 
     def test_session_expires(self) -> None:
         self.register()
@@ -362,7 +401,8 @@ class AuthTests(unittest.TestCase):
     def test_missing_and_malformed_credentials(self) -> None:
         self.assertEqual(self.client.get("/auth/user/me").status_code, 401)
         self.assertEqual(
-            self.client.post("/auth/user/verify", json={}).status_code, 400,
+            self.client.post("/auth/user/verify", json={}).status_code,
+            400,
         )
         self.register()
         for credential in [{}, {"id": 123}, {"id": "abc", "response": []}]:
@@ -377,11 +417,133 @@ class AuthTests(unittest.TestCase):
         authenticator = self.register()
         credential = authenticator.authentication(self.login_options(), sign_count=1)
         self.assertEqual(
-            self.client.post("/auth/user/verify", json=credential).status_code, 200,
+            self.client.post("/auth/user/verify", json=credential).status_code,
+            200,
         )
         credential = authenticator.authentication(self.login_options(), sign_count=1)
         self.assertEqual(
-            self.client.post("/auth/user/verify", json=credential).status_code, 403,
+            self.client.post("/auth/user/verify", json=credential).status_code,
+            403,
+        )
+
+    def test_invitation_is_required_before_issuing_registration_options(self) -> None:
+        for data in [
+            {"username": "alice"},
+            {"username": "alice", "invitation_code": ""},
+            {"username": "alice", "invitation_code": "wrong-code"},
+        ]:
+            with self.subTest(data=data):
+                response = self.client.post("/auth/user/register", json=data)
+                self.assertIn(response.status_code, [403, 422])
+                self.assertNotIn("challenge", response.json())
+        self.assertIn(
+            self.client.get(
+                "/auth/user/register", params={"username": "alice"},
+            ).status_code,
+            [404, 405],
+        )
+        with Session(self.engine) as session:
+            self.assertEqual(session.exec(select(AuthChallenge)).all(), [])
+            self.assertEqual(session.exec(select(User)).all(), [])
+            self.assertEqual(session.exec(select(PasskeyCredential)).all(), [])
+
+    def test_invitation_is_checked_again_before_saving_account(self) -> None:
+        options = self.registration_options().json()
+        credential = SoftwareAuthenticator().registration(options)
+        self.client.headers.pop("X-Invitation-Code")
+        for headers in [{}, {"X-Invitation-Code": "wrong-code"}]:
+            response = self.client.post(
+                "/auth/user/register/verify",
+                json=credential,
+                headers=headers,
+            )
+            self.assertEqual(response.status_code, 403)
+        with Session(self.engine) as session:
+            self.assertEqual(session.exec(select(User)).all(), [])
+            self.assertEqual(session.exec(select(PasskeyCredential)).all(), [])
+        response = self.client.post(
+            "/auth/user/register/verify",
+            json=credential,
+            headers={"X-Invitation-Code": "test-invitation"},
+            follow_redirects=False,
+        )
+        self.assertEqual(response.status_code, 303)
+
+    def test_missing_invitation_configuration_disables_registration(self) -> None:
+        options = self.registration_options().json()
+        credential = SoftwareAuthenticator().registration(options)
+        with patch.object(main, "INVITATION_CODE", ""):
+            self.assertEqual(self.registration_options().status_code, 503)
+            self.assertEqual(
+                self.client.post(
+                    "/auth/user/register/verify", json=credential,
+                ).status_code,
+                503,
+            )
+        with Session(self.engine) as session:
+            self.assertEqual(session.exec(select(User)).all(), [])
+            self.assertEqual(session.exec(select(PasskeyCredential)).all(), [])
+
+    def test_invitation_rotation_invalidates_old_code(self) -> None:
+        options = self.registration_options().json()
+        credential = SoftwareAuthenticator().registration(options)
+        with patch.object(main, "INVITATION_CODE", "new-invitation"):
+            self.assertEqual(
+                self.client.post(
+                    "/auth/user/register/verify", json=credential,
+                ).status_code,
+                403,
+            )
+        with Session(self.engine) as session:
+            self.assertEqual(session.exec(select(User)).all(), [])
+
+    def test_invitation_can_be_reused_for_multiple_accounts(self) -> None:
+        self.register("alice")
+        self.register("bob")
+        self.assertEqual(main.INVITATION_CODE, "test-invitation")
+        with Session(self.engine) as session:
+            self.assertEqual(
+                {user.username for user in session.exec(select(User)).all()},
+                {"alice", "bob"},
+            )
+            self.assertEqual(len(session.exec(select(PasskeyCredential)).all()), 2)
+
+    def test_web_pages_and_api_routing(self) -> None:
+        for path in [
+            "/",
+            "/register/",
+            "/register/index.html",
+            "/js/auth.mjs",
+            "/auth.css",
+            "/lib/dads-components-bundle.css",
+            "/images/thumb.jpeg",
+            "/docs",
+        ]:
+            with self.subTest(path=path):
+                self.assertEqual(self.client.get(path).status_code, 200)
+        for path in [
+            "/mypage",
+            "/mypage/",
+            "/mypage/index.html",
+            "/register/complete.html",
+        ]:
+            with self.subTest(path=path):
+                response = self.client.get(path, follow_redirects=False)
+                self.assertEqual(response.status_code, 303)
+        self.register()
+        for path in [
+            "/mypage",
+            "/mypage/",
+            "/mypage/index.html",
+            "/register/complete.html",
+        ]:
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.headers["cache-control"], "no-store")
+        self.client.post("/auth/user/logout")
+        self.assertEqual(
+            self.client.get("/mypage/", follow_redirects=False).status_code, 303,
         )
 
 
