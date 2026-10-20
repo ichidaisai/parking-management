@@ -16,38 +16,96 @@
   width: 100%;
 }
 
+.dads-button:active {
+  text-decoration: none;
+}
+
 button:disabled {
   opacity: 0.6;
   cursor: wait;
 }
 
-.mypage-item-row,
-.container > div {
+.parking-list {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.75rem 1rem;
+}
+
+.parking-row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+}
+
+.parking-count {
+  text-align: right;
+}
+
+#logout-button {
+  margin-top: 3rem;
+}
+
+#parking-count-title {
+  text-align: center;
+  font-size: 1.25rem;
+  font-weight: 400;
+}
+
+.parking-counter,
+.parking-dialog-actions {
+  display: flex;
+  justify-content: center;
   align-items: center;
   gap: 1rem;
-  width: 100%;
-  max-width: 30rem;
-  margin-inline: auto;
 }
 
-.mypage-item-row p,
-.container > div p {
-  margin: 0;
+#parking-count-form {
+  row-gap: 2rem;
+  padding-block: 2rem;
+  border-radius: 1.5rem;
 }
 
-.mypage-item-row > * {
-  justify-content: center;
+#parking-count-form > * {
+  padding-block: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  #parking-count-dialog,
+  #parking-count-dialog::backdrop {
+    transition: opacity 0.2s ease;
+  }
+
+  @starting-style {
+    #parking-count-dialog[open],
+    #parking-count-dialog[open]::backdrop {
+      opacity: 0;
+    }
+  }
+}
+
+#parking-count-dialog.is-closing,
+#parking-count-dialog.is-closing::backdrop {
+  opacity: 0;
+}
+
+.parking-counter .dads-button {
+  min-width: 0;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 1.25rem;
+  touch-action: manipulation; /* 連打でダブルタップズームしないように */
+}
+
+/* 桁数が変わっても −/＋ が動かないよう幅を確保 */
+#parking-count-value {
+  min-width: 3em;
+  padding: 0.5rem 1rem;
+  font-size: 1.25rem;
+  border-radius: 0.75rem;
+  background-color: var(--color-neutral-solid-gray-50);
   text-align: center;
 }
-
-.mypage-item-text {
-  color: #333;
-  font-size: 1.125rem;
-  font-weight: 600;
-  line-height: 1.6;
-  text-align: center;
-}
-
-

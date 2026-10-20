@@ -203,6 +203,46 @@ class AuthTests(unittest.TestCase):
         self.client.cookies.set(auth_handlers.SESSION_COOKIE, token, path="/")
         self.assertEqual(self.client.get("/auth/user/me").status_code, 401)
 
+    def test_parking_lot_values_are_shared_and_require_login(self) -> None:
+        self.register()
+        initial = self.client.get("/parking-lots")
+        self.assertEqual(initial.status_code, 200)
+        self.assertEqual(initial.json()["parking-1"], 0)
+        self.assertEqual(
+            self.client.put("/parking-lots/parking-1", json={"count": -1}).status_code,
+            422,
+        )
+        self.assertEqual(
+            self.client.put("/parking-lots/not-a-parking-lot", json={"count": 8}).status_code,
+            404,
+        )
+        updated = self.client.put("/parking-lots/parking-1", json={"count": 47})
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual(updated.json(), {"parking_id": "parking-1", "count": 47})
+
+        with TestClient(
+            main.app,
+            headers={"X-Invitation-Code": "test-invitation"},
+        ) as other:
+            options = self.registration_options("bob", client=other)
+            authenticator = SoftwareAuthenticator()
+            registration = other.post(
+                "/auth/user/register/verify",
+                json=authenticator.registration(options.json()),
+                follow_redirects=False,
+            )
+            self.assertEqual(registration.status_code, 303)
+            shared = other.get("/parking-lots")
+            self.assertEqual(shared.status_code, 200)
+            self.assertEqual(shared.json()["parking-1"], 47)
+
+        with TestClient(main.app) as guest:
+            self.assertEqual(guest.get("/parking-lots").status_code, 401)
+            self.assertEqual(
+                guest.put("/parking-lots/parking-1", json={"count": 9}).status_code,
+                401,
+            )
+
     def test_username_validation(self) -> None:
         for username in ["alice@example.com", "", "two words", "a" * 101]:
             with self.subTest(username=username):
@@ -536,6 +576,8 @@ class AuthTests(unittest.TestCase):
             "/auth.css",
             "/lib/dads-components-bundle.css",
             "/images/thumb.jpeg",
+            "/images/favicon.ico",
+            "/images/touch-icon.png",
             "/docs",
         ]:
             with self.subTest(path=path):

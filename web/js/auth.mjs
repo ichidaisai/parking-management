@@ -1,3 +1,5 @@
+import { initParking } from "./parking.mjs";
+
 const messages = {
   "Invalid invitation code": "招待コードが一致しません。確認してもう一度入力してください。",
   "Registration is disabled": "現在、新規登録を受け付けていません。管理者にお問い合わせください。",
@@ -176,6 +178,7 @@ async function loadProfile() {
   const user = await response.json();
   document.querySelector("#username").textContent = user.display_name || user.username;
   document.querySelector("#account-content").hidden = false;
+  initParking({ api, showError });
 }
 
 if (typeof document !== "undefined") {
@@ -187,7 +190,9 @@ if (typeof document !== "undefined") {
   }
   const loginForm = document.querySelector("#login-form");
   if (loginForm) bindForm(loginForm, () => login());
-  if (document.body.dataset.page === "mypage") loadProfile().catch(showError);
+  if (document.body.dataset.page === "mypage") {
+    loadProfile().catch(showError);
+  }
   const logout = document.querySelector("#logout-button");
   logout?.addEventListener("click", async () => {
     logout.disabled = true;
