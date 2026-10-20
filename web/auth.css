@@ -20,3 +20,34 @@ button:disabled {
   opacity: 0.6;
   cursor: wait;
 }
+
+.mypage-item-row,
+.container > div {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+  max-width: 30rem;
+  margin-inline: auto;
+}
+
+.mypage-item-row p,
+.container > div p {
+  margin: 0;
+}
+
+.mypage-item-row > * {
+  justify-content: center;
+  text-align: center;
+}
+
+.mypage-item-text {
+  color: #333;
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.6;
+  text-align: center;
+}
+
+
