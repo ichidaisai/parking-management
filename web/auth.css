@@ -71,6 +71,10 @@ button:disabled {
   padding-block: 0;
 }
 
+#parking-count-dialog {
+  justify-content: safe center;
+}
+
 @media (prefers-reduced-motion: no-preference) {
   #parking-count-dialog,
   #parking-count-dialog::backdrop {
@@ -97,10 +101,9 @@ button:disabled {
   padding: 0;
   border-radius: 50%;
   font-size: 1.25rem;
-  touch-action: manipulation; /* 連打でダブルタップズームしないように */
+  touch-action: manipulation;
 }
 
-/* 桁数が変わっても −/＋ が動かないよう幅を確保 */
 #parking-count-value {
   min-width: 3em;
   padding: 0.5rem 1rem;
