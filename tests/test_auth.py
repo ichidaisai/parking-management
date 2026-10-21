@@ -207,18 +207,45 @@ class AuthTests(unittest.TestCase):
         self.register()
         initial = self.client.get("/parking-lots")
         self.assertEqual(initial.status_code, 200)
-        self.assertEqual(initial.json()["parking-1"], 0)
+        self.assertEqual(initial.json()["parking-1"], {"general": 0})
+        self.assertEqual(initial.json()["parking-4"], {"general": 0, "accessible": 0})
+        self.assertEqual(initial.json()["gym-rear"], {"general": 0})
+        for body in [{"general": -1}, {}, {"accessible": 1}, {"count": 1}]:
+            with self.subTest(body=body):
+                self.assertEqual(
+                    self.client.put("/parking-lots/parking-1", json=body).status_code,
+                    422,
+                )
         self.assertEqual(
-            self.client.put("/parking-lots/parking-1", json={"count": -1}).status_code,
-            422,
-        )
-        self.assertEqual(
-            self.client.put("/parking-lots/not-a-parking-lot", json={"count": 8}).status_code,
+            self.client.put("/parking-lots/not-a-parking-lot", json={"general": 8}).status_code,
             404,
         )
-        updated = self.client.put("/parking-lots/parking-1", json={"count": 47})
+        updated = self.client.put("/parking-lots/parking-1", json={"general": 47})
         self.assertEqual(updated.status_code, 200)
-        self.assertEqual(updated.json(), {"parking_id": "parking-1", "count": 47})
+        self.assertEqual(updated.json(), {"general": 47})
+        updated = self.client.put("/parking-lots/parking-4", json={"general": 5, "accessible": 2})
+        self.assertEqual(updated.json(), {"general": 5, "accessible": 2})
+        updated = self.client.put("/parking-lots/parking-4", json={"accessible": 1})
+        self.assertEqual(updated.json(), {"general": 5, "accessible": 1})
+        # 最大台数ちょうどは保存でき、超えると拒否する。最大台数が未定なら上限なし
+        self.assertEqual(
+            self.client.put("/parking-lots/library-rear", json={"general": 65, "accessible": 2}).status_code,
+            200,
+        )
+        for parking_id, body in [
+            ("parking-1", {"general": 66}),
+            ("parking-4", {"accessible": 5}),
+            ("library-rear", {"general": 0, "accessible": 3}),
+        ]:
+            with self.subTest(parking_id=parking_id, body=body):
+                exceeded = self.client.put(f"/parking-lots/{parking_id}", json=body)
+                self.assertEqual(exceeded.status_code, 422)
+                self.assertEqual(exceeded.json()["detail"], "Exceeds parking capacity")
+        self.assertEqual(self.client.get("/parking-lots").json()["library-rear"], {"general": 65, "accessible": 2})
+        self.assertEqual(
+            self.client.put("/parking-lots/gym-rear", json={"general": 500}).status_code,
+            200,
+        )
 
         with TestClient(
             main.app,
@@ -234,16 +261,17 @@ class AuthTests(unittest.TestCase):
             self.assertEqual(registration.status_code, 303)
             shared = other.get("/parking-lots")
             self.assertEqual(shared.status_code, 200)
-            self.assertEqual(shared.json()["parking-1"], 47)
+            self.assertEqual(shared.json()["parking-1"], {"general": 47})
 
         with TestClient(main.app) as guest:
             self.assertEqual(guest.get("/parking-lots").status_code, 401)
             public = guest.get("/public/parking-lots")
             self.assertEqual(public.status_code, 200)
-            self.assertEqual(public.json()["parking-1"], 47)
+            self.assertEqual(public.json()["parking-1"], {"general": 47})
+            self.assertEqual(public.json()["parking-4"], {"general": 5, "accessible": 1})
             self.assertEqual(public.headers["access-control-allow-origin"], "*")
             self.assertEqual(
-                guest.put("/parking-lots/parking-1", json={"count": 9}).status_code,
+                guest.put("/parking-lots/parking-1", json={"general": 9}).status_code,
                 401,
             )
 

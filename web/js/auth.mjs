@@ -1,8 +1,10 @@
-import { initParking } from "./parking.mjs";
+import { initParking } from "./parking.mjs?v=5";
 
 const messages = {
   "Invalid invitation code": "招待コードが一致しません。確認してもう一度入力してください。",
   "Registration is disabled": "現在、新規登録を受け付けていません。管理者にお問い合わせください。",
+  "Exceeds parking capacity": "最大台数を超えています。再読み込みしてからもう一度お試しください。",
+  "Invalid parking space kind": "台数を保存できませんでした。再読み込みしてからもう一度お試しください。",
   "Username already exists": "このニックネームは使用されています。別の名前を入力してください。",
   "Username or passkey already exists": "このニックネームまたはパスキーは登録済みです。",
   "User or passkey unavailable": "利用できるパスキーがありません。",

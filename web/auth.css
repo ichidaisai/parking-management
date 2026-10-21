@@ -22,7 +22,6 @@
 
 button:disabled {
   opacity: 0.6;
-  cursor: wait;
 }
 
 .parking-list {
@@ -30,6 +29,7 @@ button:disabled {
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 0.75rem 1rem;
+  margin-top: 2rem;
 }
 
 .parking-row {
@@ -39,7 +39,15 @@ button:disabled {
   align-items: center;
 }
 
-/* 数字の幅を3桁分に固定し、桁数が変わっても「残り」「台」が動かないようにする */
+.parking-list-header {
+  font-weight: 700;
+}
+
+.parking-counts {
+  display: grid;
+  justify-items: end;
+}
+
 .parking-count-value {
   display: inline-block;
   min-width: 3ch;
@@ -48,10 +56,15 @@ button:disabled {
   text-align: right;
 }
 
-/* 空き0台（満車）は DADS のエラー色で目印にする */
-.parking-row[data-empty] .parking-count {
+.parking-count[data-empty] {
   color: var(--color-semantic-error-1);
   font-weight: 700;
+}
+
+.parking-map {
+  display: block;
+  width: 100%;
+  height: auto;
 }
 
 #logout-button {
@@ -61,7 +74,6 @@ button:disabled {
 #parking-count-title {
   text-align: center;
   font-size: 1.25rem;
-  font-weight: 400;
 }
 
 .parking-counter,
@@ -70,6 +82,21 @@ button:disabled {
   justify-content: center;
   align-items: center;
   gap: 1rem;
+}
+
+.parking-counters {
+  display: grid;
+  row-gap: 1.5rem;
+}
+
+.parking-counter {
+  flex-wrap: wrap;
+}
+
+.parking-counter-label {
+  flex-basis: 100%;
+  text-align: center;
+  font-weight: 700;
 }
 
 #parking-count-form {
@@ -115,7 +142,7 @@ button:disabled {
   touch-action: manipulation;
 }
 
-#parking-count-value {
+.parking-counter-value {
   min-width: 3em;
   padding: 0.5rem 1rem;
   font-size: 1.25rem;

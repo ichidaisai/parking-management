@@ -45,21 +45,33 @@
 
 ## 外部サイトから台数を取得する
 
-`GET /public/parking-lots` で、駐車場IDごとの台数を取得できます。ログインは不要で、読み取り専用です。どのサイトのJavaScriptからも取得できます。
+`GET /public/parking-lots` で、駐車場IDごとの空き台数を取得できます。ログインは不要で、読み取り専用です。どのサイトのJavaScriptからも取得できます。
+
+台数は区分ごとに返します。`general` は一般駐車場、`accessible` は身体障害者用駐車場です。`accessible` は身体障害者用駐車場がある駐車場にだけ含まれます。
 
 ```json
-{"parking-1": 3, "parking-3": 0, "parking-4": 12, "track-field": 5, "dormitory": 0, "library-rear": 7, "campus-road": 1}
+{
+  "parking-1": {"general": 3},
+  "parking-3": {"general": 0},
+  "parking-4": {"general": 12, "accessible": 1},
+  "track-field": {"general": 5},
+  "dormitory": {"general": 0},
+  "library-rear": {"general": 7, "accessible": 0},
+  "campus-road": {"general": 1},
+  "gym-rear": {"general": 4}
+}
 ```
 
-| ID | 駐車場名 |
-|---|---|
-| `parking-1` | 第1駐車場 |
-| `parking-3` | 第3駐車場 |
-| `parking-4` | 第4駐車場 |
-| `track-field` | トラック&フィールド駐車場 |
-| `dormitory` | 寮内駐車場 |
-| `library-rear` | 図書館裏駐車場 |
-| `campus-road` | 構内道路駐車場 |
+| ID | 駐車場名 | 身体障害者用 |
+|---|---|---|
+| `parking-1` | 第1駐車場 | |
+| `parking-3` | 第3駐車場 | |
+| `parking-4` | 第4駐車場 | あり |
+| `track-field` | トラック&フィールド駐車場 | |
+| `dormitory` | 寮内駐車場 | |
+| `library-rear` | 図書館裏駐車場 | あり |
+| `campus-road` | 構内道路駐車場 | |
+| `gym-rear` | 体育館裏駐車場 | |
 
 レスポンスは最大15秒キャッシュされます。そのため、台数が変わってから反映されるまで、最大15秒程度かかります。
 
@@ -69,7 +81,7 @@ Next.js での例（サーバーコンポーネント）：
 const res = await fetch("https://<本番ドメイン>/public/parking-lots", {
   next: { revalidate: 15 },
 });
-const counts = await res.json(); // counts["parking-1"] → 3
+const counts = await res.json(); // counts["parking-4"].accessible → 1
 ```
 
 ブラウザ側（クライアントコンポーネント）で取得する場合も、同じURLを `fetch` すれば取得できます。最新の台数を表示し続けるには、数十秒ごとに取り直してください。

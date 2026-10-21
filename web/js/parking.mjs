@@ -1,5 +1,4 @@
-// マイページの駐車場一覧と台数変更ダイアログ。
-// 台数は全ユーザー共通なので、定期的に取り直して他の人の変更を反映する。
+// 台数は全ユーザー共通なので、定期的に取り直して他の人の変更を反映する
 
 const POLL_INTERVAL_MS = 20_000;
 
@@ -7,13 +6,16 @@ export function initParking({ api, showError }) {
   const rows = document.querySelectorAll("[data-parking-id]");
   const dialog = document.querySelector("#parking-count-dialog");
   const form = document.querySelector("#parking-count-form");
-  const display = document.querySelector("#parking-count-value");
-  let activeParkingId;
-  let count = 0;
+  const counters = dialog.querySelectorAll(".parking-counter");
+  let activeRow;
+  let counts = {};
 
-  const showCount = (row, value) => {
-    row.querySelector(".parking-count-value").textContent = value;
-    row.toggleAttribute("data-empty", value === 0);
+  const showCounts = (row, values) => {
+    row.querySelectorAll(".parking-count").forEach((line) => {
+      const value = values[line.dataset.kind] ?? 0;
+      line.querySelector(".parking-count-value").textContent = value;
+      line.toggleAttribute("data-empty", value === 0);
+    });
   };
 
   let refreshing = false;
@@ -21,26 +23,28 @@ export function initParking({ api, showError }) {
     if (refreshing) return;
     refreshing = true;
     try {
-      const counts = await (await api("/parking-lots")).json();
-      rows.forEach((row) => showCount(row, counts[row.dataset.parkingId] ?? 0));
+      const lots = await (await api("/parking-lots")).json();
+      rows.forEach((row) => showCounts(row, lots[row.dataset.parkingId] ?? {}));
     } finally {
       refreshing = false;
     }
   };
 
-  // 初回の失敗だけ表示し、定期更新の一時的な失敗は次回に任せる
   refresh().catch(showError);
   setInterval(() => {
     if (!document.hidden) refresh().catch(() => {});
   }, POLL_INTERVAL_MS);
-  // バックグラウンドから戻ったときはすぐ最新にする
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) refresh().catch(() => {});
   });
 
-  const setCount = (value) => {
-    count = Math.max(0, value);
-    display.textContent = count;
+  const setCount = (kind, value) => {
+    const counter = dialog.querySelector(`.parking-counter[data-kind="${kind}"]`);
+    const max = Number(counter.dataset.max);
+    counts[kind] = Math.min(Math.max(0, value), max);
+    counter.querySelector(".parking-counter-value").textContent = counts[kind];
+    counter.querySelector('[data-step="-1"]').disabled = counts[kind] === 0;
+    counter.querySelector('[data-step="1"]').disabled = counts[kind] === max;
   };
 
   // close() 直後は :modal が外れてレイアウトが変わるため、フェードし終えてから閉じる
@@ -53,27 +57,36 @@ export function initParking({ api, showError }) {
   };
 
   dialog.addEventListener("cancel", (event) => {
-    event.preventDefault(); // Esc でもフェードさせる
+    event.preventDefault();
     closeDialog();
   });
 
   document.querySelectorAll(".parking-change-button").forEach((button) => {
     button.addEventListener("click", () => {
-      const row = button.closest("[data-parking-id]");
-      activeParkingId = row.dataset.parkingId;
+      activeRow = button.closest("[data-parking-id]");
       document.querySelector("#parking-count-title").textContent =
-        row.querySelector(".parking-name").textContent;
-      setCount(Number(row.querySelector(".parking-count-value").textContent) || 0);
+        activeRow.querySelector(".parking-name").textContent;
+      counts = {};
+      counters.forEach((counter) => {
+        const line = activeRow.querySelector(`.parking-count[data-kind="${counter.dataset.kind}"]`);
+        counter.hidden = !line;
+        if (line) {
+          // data-max がない区分は上限なし
+          counter.dataset.max = line.dataset.max ?? Infinity;
+          setCount(counter.dataset.kind, Number(line.querySelector(".parking-count-value").textContent) || 0);
+        }
+      });
       dialog.showModal();
     });
   });
 
-  document.querySelector("#parking-count-minus").addEventListener("click", () => {
-    setCount(count - 1);
-  });
-
-  document.querySelector("#parking-count-plus").addEventListener("click", () => {
-    setCount(count + 1);
+  counters.forEach((counter) => {
+    counter.querySelectorAll("[data-step]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const { kind } = counter.dataset;
+        setCount(kind, counts[kind] + Number(button.dataset.step));
+      });
+    });
   });
 
   document.querySelector("#parking-count-cancel").addEventListener("click", closeDialog);
@@ -83,12 +96,11 @@ export function initParking({ api, showError }) {
     const saveButton = form.querySelector('button[type="submit"]');
     saveButton.disabled = true;
     try {
-      const response = await api(`/parking-lots/${activeParkingId}`, {
+      const response = await api(`/parking-lots/${activeRow.dataset.parkingId}`, {
         method: "PUT",
-        body: JSON.stringify({ count }),
+        body: JSON.stringify(counts),
       });
-      const result = await response.json();
-      showCount(document.querySelector(`[data-parking-id="${activeParkingId}"]`), result.count);
+      showCounts(activeRow, await response.json());
       closeDialog();
     } catch (error) {
       showError(error);
