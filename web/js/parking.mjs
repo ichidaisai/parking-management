@@ -12,7 +12,7 @@ export function initParking({ api, showError }) {
   let count = 0;
 
   const showCount = (row, value) => {
-    row.querySelector(".parking-count").textContent = `${value}台`;
+    row.querySelector(".parking-count-value").textContent = value;
   };
 
   let refreshing = false;
@@ -62,7 +62,7 @@ export function initParking({ api, showError }) {
       activeParkingId = row.dataset.parkingId;
       document.querySelector("#parking-count-title").textContent =
         row.querySelector(".parking-name").textContent;
-      setCount(Number(row.querySelector(".parking-count").textContent.replace(/\D/g, "")));
+      setCount(Number(row.querySelector(".parking-count-value").textContent) || 0);
       dialog.showModal();
     });
   });

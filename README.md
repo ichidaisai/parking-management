@@ -43,6 +43,37 @@
 
 データはSQLiteに保存します。初期設定の保存先は `db.sqlite3` です。
 
+## 外部サイトから台数を取得する
+
+`GET /public/parking-lots` で、駐車場IDごとの台数を取得できます。ログインは不要で、読み取り専用です。どのサイトのJavaScriptからも取得できます。
+
+```json
+{"parking-1": 3, "parking-3": 0, "parking-4": 12, "track-field": 5, "dormitory": 0, "library-rear": 7, "campus-road": 1}
+```
+
+| ID | 駐車場名 |
+|---|---|
+| `parking-1` | 第1駐車場 |
+| `parking-3` | 第3駐車場 |
+| `parking-4` | 第4駐車場 |
+| `track-field` | トラック&フィールド駐車場 |
+| `dormitory` | 寮内駐車場 |
+| `library-rear` | 図書館裏駐車場 |
+| `campus-road` | 構内道路駐車場 |
+
+レスポンスは最大15秒キャッシュされます。そのため、台数が変わってから反映されるまで、最大15秒程度かかります。
+
+Next.js での例（サーバーコンポーネント）：
+
+```js
+const res = await fetch("https://<本番ドメイン>/public/parking-lots", {
+  next: { revalidate: 15 },
+});
+const counts = await res.json(); // counts["parking-1"] → 3
+```
+
+ブラウザ側（クライアントコンポーネント）で取得する場合も、同じURLを `fetch` すれば取得できます。最新の台数を表示し続けるには、数十秒ごとに取り直してください。
+
 <details>
 <summary>開発者向け：API仕様とテスト</summary>
 

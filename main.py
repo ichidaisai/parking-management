@@ -14,7 +14,7 @@ load_dotenv(Path(__file__).resolve().with_name(".env"), override=False)
 
 from db import engine, get_session  # noqa: E402
 from handlers.auth import SESSION_COOKIE, auth  # noqa: E402
-from handlers.parking import parking  # noqa: E402
+from handlers.parking import parking, public_parking  # noqa: E402
 from lib import pk  # noqa: E402
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
@@ -31,6 +31,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
 app = FastAPI(lifespan=lifespan)
 app.include_router(auth)
 app.include_router(parking)
+app.include_router(public_parking)
 
 
 def login_required_page(

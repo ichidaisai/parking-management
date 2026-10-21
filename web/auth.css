@@ -39,7 +39,12 @@ button:disabled {
   align-items: center;
 }
 
-.parking-count {
+/* 数字の幅を3桁分に固定し、桁数が変わっても「残り」「台」が動かないようにする */
+.parking-count-value {
+  display: inline-block;
+  min-width: 3ch;
+  margin-inline: 0.25em;
+  font-variant-numeric: tabular-nums;
   text-align: right;
 }
 

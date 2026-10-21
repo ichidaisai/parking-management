@@ -238,6 +238,10 @@ class AuthTests(unittest.TestCase):
 
         with TestClient(main.app) as guest:
             self.assertEqual(guest.get("/parking-lots").status_code, 401)
+            public = guest.get("/public/parking-lots")
+            self.assertEqual(public.status_code, 200)
+            self.assertEqual(public.json()["parking-1"], 47)
+            self.assertEqual(public.headers["access-control-allow-origin"], "*")
             self.assertEqual(
                 guest.put("/parking-lots/parking-1", json={"count": 9}).status_code,
                 401,
