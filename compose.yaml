@@ -1,0 +1,35 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    volumes:
+      - app-data:/app/data
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: sqlite:////app/data/db.sqlite3
+      RP_ID: ${RP_ID:-localhost}
+      RP_NAME: ${RP_NAME:-FastAPI Passkey}
+      RP_ORIGIN: ${RP_ORIGIN:-http://localhost:8000}
+      INVITATION_CODE: ${INVITATION_CODE:-}
+    healthcheck:
+      test: >-
+        python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/public/parking-lots', timeout=5)"
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+
+  cloudflared:
+    image: docker.io/cloudflare/cloudflared:latest
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARED_TOKEN:-}
+    depends_on:
+      app:
+        condition: service_healthy
+
+volumes:
+  app-data:

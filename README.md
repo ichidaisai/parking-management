@@ -24,6 +24,35 @@
 
 5. パスキー対応ブラウザーで [ログイン画面](http://localhost:8000/) を開きます。
 
+## コンテナで起動する（Docker / Podman）
+
+`.env.sample` を `.env` にコピーし、`INVITATION_CODE` を設定してから起動します。
+
+```sh
+docker compose up -d --build
+```
+
+Podmanを使う場合は、Composeプロバイダー（`podman-compose` など）をインストールし、`docker compose` を `podman compose` に読み替えてください。
+
+起動後は http://localhost:8000/ を開きます。ログと停止は次のコマンドで確認・実行できます。
+
+```sh
+docker compose logs -f app
+docker compose down
+```
+
+コンテナではSQLiteを名前付きボリューム `app-data` の `/app/data/db.sqlite3` に保存します。ホスト側の既存の `db.sqlite3` は自動では取り込みません。`down` だけではデータは削除されませんが、`down -v` はデータも削除するので注意してください。ソースコードを変更した場合は `up -d --build` で再ビルドします。
+
+### Cloudflare Tunnelを使う
+
+`.env` に `CLOUDFLARED_TOKEN` を設定し、公開URLに合わせて `RP_ID`（ホスト名のみ）と `RP_ORIGIN`（`https://` を含むURL）を変更します。Cloudflare側のサービスURLは `http://app:8000` に設定してください。
+
+```sh
+docker compose --profile tunnel up -d --build
+```
+
+通常の起動ではTunnelは起動しません。Tunnelも停止するときは `docker compose --profile tunnel down` を使います。トークンや `.env` はイメージには含めません。
+
 ## 使い方
 
 - **新規登録：** 招待コードとニックネームを入力し、パスキーを登録します。同じ招待コードを複数の登録に使えます。
