@@ -16,7 +16,137 @@
   width: 100%;
 }
 
+.dads-button:active {
+  text-decoration: none;
+}
+
 button:disabled {
   opacity: 0.6;
-  cursor: wait;
+}
+
+.parking-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  margin-top: 2rem;
+}
+
+.parking-row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+}
+
+.parking-list-header {
+  font-weight: 700;
+}
+
+.parking-counts {
+  display: grid;
+  justify-items: end;
+}
+
+.parking-count-value {
+  display: inline-block;
+  min-width: 3ch;
+  margin-inline: 0.25em;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.parking-count[data-empty] {
+  color: var(--color-semantic-error-1);
+  font-weight: 700;
+}
+
+.parking-map {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+#logout-button {
+  margin-top: 3rem;
+}
+
+#parking-count-title {
+  text-align: center;
+  font-size: 1.25rem;
+}
+
+.parking-counter,
+.parking-dialog-actions {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1rem;
+}
+
+.parking-counters {
+  display: grid;
+  row-gap: 1.5rem;
+}
+
+.parking-counter {
+  flex-wrap: wrap;
+}
+
+.parking-counter-label {
+  flex-basis: 100%;
+  text-align: center;
+  font-weight: 700;
+}
+
+#parking-count-form {
+  row-gap: 2rem;
+  padding-block: 2rem;
+  border-radius: 1.5rem;
+}
+
+#parking-count-form > * {
+  padding-block: 0;
+}
+
+#parking-count-dialog {
+  justify-content: safe center;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  #parking-count-dialog,
+  #parking-count-dialog::backdrop {
+    transition: opacity 0.2s ease;
+  }
+
+  @starting-style {
+    #parking-count-dialog[open],
+    #parking-count-dialog[open]::backdrop {
+      opacity: 0;
+    }
+  }
+}
+
+#parking-count-dialog.is-closing,
+#parking-count-dialog.is-closing::backdrop {
+  opacity: 0;
+}
+
+.parking-counter .dads-button {
+  min-width: 0;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 1.25rem;
+  touch-action: manipulation;
+}
+
+.parking-counter-value {
+  min-width: 3em;
+  padding: 0.5rem 1rem;
+  font-size: 1.25rem;
+  border-radius: 0.75rem;
+  background-color: var(--color-neutral-solid-gray-50);
+  text-align: center;
 }
