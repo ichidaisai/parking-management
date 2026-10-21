@@ -48,6 +48,12 @@ button:disabled {
   text-align: right;
 }
 
+/* 空き0台（満車）は DADS のエラー色で目印にする */
+.parking-row[data-empty] .parking-count {
+  color: var(--color-semantic-error-1);
+  font-weight: 700;
+}
+
 #logout-button {
   margin-top: 3rem;
 }

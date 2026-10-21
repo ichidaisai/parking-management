@@ -13,6 +13,7 @@ export function initParking({ api, showError }) {
 
   const showCount = (row, value) => {
     row.querySelector(".parking-count-value").textContent = value;
+    row.toggleAttribute("data-empty", value === 0);
   };
 
   let refreshing = false;
