@@ -209,7 +209,8 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(initial.status_code, 200)
         self.assertEqual(initial.json()["parking-1"], {"general": 0})
         self.assertEqual(initial.json()["parking-4"], {"general": 0, "accessible": 0})
-        self.assertEqual(initial.json()["gym-rear"], {"general": 0})
+        self.assertEqual(initial.json()["campus-road"], {"general": 0})
+        self.assertNotIn("gym-rear", initial.json())
         for body in [{"general": -1}, {}, {"accessible": 1}, {"count": 1}]:
             with self.subTest(body=body):
                 self.assertEqual(
@@ -243,7 +244,7 @@ class AuthTests(unittest.TestCase):
                 self.assertEqual(exceeded.json()["detail"], "Exceeds parking capacity")
         self.assertEqual(self.client.get("/parking-lots").json()["library-rear"], {"general": 65, "accessible": 2})
         self.assertEqual(
-            self.client.put("/parking-lots/gym-rear", json={"general": 500}).status_code,
+            self.client.put("/parking-lots/campus-road", json={"general": 500}).status_code,
             200,
         )
 

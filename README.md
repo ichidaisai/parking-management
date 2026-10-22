@@ -86,8 +86,7 @@ docker compose --profile tunnel up -d --build
   "track-field": {"general": 5},
   "dormitory": {"general": 0},
   "library-rear": {"general": 7, "accessible": 0},
-  "campus-road": {"general": 1},
-  "gym-rear": {"general": 4}
+  "campus-road": {"general": 1}
 }
 ```
 
@@ -100,7 +99,6 @@ docker compose --profile tunnel up -d --build
 | `dormitory` | 寮内駐車場 | |
 | `library-rear` | 図書館裏駐車場 | あり |
 | `campus-road` | 構内道路駐車場 | |
-| `gym-rear` | 体育館裏駐車場 | |
 
 レスポンスは最大15秒キャッシュされます。そのため、台数が変わってから反映されるまで、最大15秒程度かかります。
 

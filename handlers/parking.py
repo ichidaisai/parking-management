@@ -24,7 +24,6 @@ PARKING_LOTS: dict[str, dict[SpaceKind, int | None]] = {
     "dormitory": {"general": 40},
     "library-rear": {"general": 65, "accessible": 2},
     "campus-road": {"general": None},
-    "gym-rear": {"general": None},
 }
 
 
