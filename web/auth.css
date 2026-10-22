@@ -116,7 +116,7 @@ button:disabled {
 @media (prefers-reduced-motion: no-preference) {
   #parking-count-dialog,
   #parking-count-dialog::backdrop {
-    transition: opacity 0.2s ease;
+    transition: opacity 0.15s ease;
   }
 
   @starting-style {
@@ -140,6 +140,14 @@ button:disabled {
   border-radius: 50%;
   font-size: 1.25rem;
   touch-action: manipulation;
+}
+
+.parking-counter-detail {
+  flex-basis: 100%;
+  text-align: center;
+  font-size: 0.875rem;
+  color: var(--color-neutral-solid-gray-536);
+  font-variant-numeric: tabular-nums;
 }
 
 .parking-counter-value {

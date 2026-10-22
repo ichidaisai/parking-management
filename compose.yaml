@@ -12,6 +12,7 @@ services:
       RP_NAME: ${RP_NAME:-FastAPI Passkey}
       RP_ORIGIN: ${RP_ORIGIN:-http://localhost:8000}
       INVITATION_CODE: ${INVITATION_CODE:-}
+      PUBLIC_HOURS: ${PUBLIC_HOURS:-}
     healthcheck:
       test: >-
         python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/public/parking-lots', timeout=5)"
