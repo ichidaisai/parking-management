@@ -6,6 +6,7 @@ import secrets
 import tempfile
 import unittest
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from typing import Any, TypedDict
 from unittest.mock import patch
 
@@ -23,6 +24,7 @@ from db import enable_foreign_keys, get_session
 from db.auth import AuthChallenge, AuthenticationChallenge, AuthSession
 from db.users import PasskeyCredential, User
 from handlers import auth as auth_handlers
+from handlers import parking as parking_handlers
 from lib import pk
 
 
@@ -266,15 +268,56 @@ class AuthTests(unittest.TestCase):
 
         with TestClient(main.app) as guest:
             self.assertEqual(guest.get("/parking-lots").status_code, 401)
-            public = guest.get("/public/parking-lots")
+            # 期間が未設定なら常に公開する
+            with patch.object(parking_handlers, "PUBLIC_HOURS", []):
+                public = guest.get("/public/parking-lots")
             self.assertEqual(public.status_code, 200)
-            self.assertEqual(public.json()["parking-1"], {"general": 47})
-            self.assertEqual(public.json()["parking-4"], {"general": 5, "accessible": 1})
+            self.assertTrue(public.json()["open"])
+            self.assertEqual(public.json()["lots"]["parking-1"], {"general": 47})
+            self.assertEqual(public.json()["lots"]["parking-4"], {"general": 5, "accessible": 1})
             self.assertEqual(public.headers["access-control-allow-origin"], "*")
+
+            # 公開時間内だけ台数を返し、時間外は駐車場の一覧を残して台数を null にする
+            now = datetime.now(parking_handlers.JST)
+            current = [(now - timedelta(hours=1), now + timedelta(hours=1))]
+            with patch.object(parking_handlers, "PUBLIC_HOURS", current):
+                public = guest.get("/public/parking-lots").json()
+                self.assertTrue(public["open"])
+                self.assertEqual(public["lots"]["parking-1"], {"general": 47})
+            past = [(now - timedelta(hours=2), now - timedelta(hours=1))]
+            with patch.object(parking_handlers, "PUBLIC_HOURS", past):
+                public = guest.get("/public/parking-lots").json()
+                self.assertFalse(public["open"])
+                self.assertEqual(public["lots"].keys(), parking_handlers.PARKING_LOTS.keys())
+                self.assertEqual(public["lots"]["parking-4"], {"general": None, "accessible": None})
             self.assertEqual(
                 guest.put("/parking-lots/parking-1", json={"general": 9}).status_code,
                 401,
             )
+
+    def test_public_hours(self) -> None:
+        jst = parking_handlers.JST
+        periods = parking_handlers.parse_public_hours(
+            "2026-11-01T09:00/2026-11-01T17:00, 2026-11-02T09:00/2026-11-02T16:00",
+        )
+        self.assertEqual(periods[0], (datetime(2026, 11, 1, 9, tzinfo=jst), datetime(2026, 11, 1, 17, tzinfo=jst)))
+        self.assertEqual(parking_handlers.parse_public_hours(""), [])
+        with patch.object(parking_handlers, "PUBLIC_HOURS", periods):
+            for now, expected in [
+                (datetime(2026, 11, 1, 8, 59, tzinfo=jst), False),
+                (datetime(2026, 11, 1, 9, tzinfo=jst), True),
+                (datetime(2026, 11, 1, 17, tzinfo=jst), False),
+                (datetime(2026, 11, 2, 15, 59, tzinfo=jst), True),
+                # 日本時間 9:00 は UTC 0:00
+                (datetime(2026, 11, 2, 0, tzinfo=UTC), True),
+            ]:
+                with self.subTest(now=now):
+                    self.assertEqual(parking_handlers.is_public_open(now), expected)
+        with patch.object(parking_handlers, "PUBLIC_HOURS", []):
+            self.assertTrue(parking_handlers.is_public_open(datetime(2000, 1, 1, tzinfo=jst)))
+        for value in ["2026-11-01T09:00", "2026-11-01T17:00/2026-11-01T09:00", "tomorrow/later"]:
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                parking_handlers.parse_public_hours(value)
 
     def test_username_validation(self) -> None:
         for username in ["alice@example.com", "", "two words", "a" * 101]:

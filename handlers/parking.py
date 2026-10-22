@@ -1,3 +1,5 @@
+import os
+from datetime import datetime, timedelta, timezone
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -25,6 +27,29 @@ PARKING_LOTS: dict[str, dict[SpaceKind, int | None]] = {
     "library-rear": {"general": 65, "accessible": 2},
     "campus-road": {"general": None},
 }
+
+# 夏時間がないので固定オフセットで扱い、コンテナのタイムゾーンデータに依存しない。
+JST = timezone(timedelta(hours=9), "JST")
+
+
+def parse_public_hours(value: str) -> list[tuple[datetime, datetime]]:
+    """`開始/終了` のカンマ区切りを日本時間の期間にする。空なら期間なし(常に公開)。"""
+    periods = []
+    for item in filter(None, (part.strip() for part in value.split(","))):
+        start_text, separator, end_text = item.partition("/")
+        if not separator:
+            raise ValueError(f"PUBLIC_HOURS must be start/end: {item!r}")
+        start, end = (datetime.fromisoformat(text.strip()) for text in (start_text, end_text))
+        # オフセットのない時刻は日本時間とみなす。
+        start, end = (dt if dt.tzinfo else dt.replace(tzinfo=JST) for dt in (start, end))
+        if start >= end:
+            raise ValueError(f"PUBLIC_HOURS start must be before end: {item!r}")
+        periods.append((start, end))
+    return periods
+
+
+# 外部サイトに台数を見せる期間(大学祭の時間)。設定ミスは起動時に止める。
+PUBLIC_HOURS = parse_public_hours(os.getenv("PUBLIC_HOURS", ""))
 
 
 def require_user(request: Request, session: SessionDep) -> None:
@@ -92,12 +117,25 @@ def update_parking_lot(
     return read_counts(session)[parking_id]
 
 
+def is_public_open(now: datetime) -> bool:
+    """開始時刻を含み、終了時刻を含まない。期間が未設定なら常に公開する。"""
+    return not PUBLIC_HOURS or any(start <= now < end for start, end in PUBLIC_HOURS)
+
+
+class PublicParkingLots(BaseModel):
+    open: bool
+    lots: dict[str, dict[SpaceKind, int | None]]
+
+
 public_parking = APIRouter(tags=["public"])
 
 
 @public_parking.get("/public/parking-lots")
-def get_public_parking_lots(response: Response, session: SessionDep) -> ParkingCounts:
-    """外部サイト向け。ログイン不要で、駐車場IDごとに区分別の台数だけを返す。"""
+def get_public_parking_lots(response: Response, session: SessionDep) -> PublicParkingLots:
+    """外部サイト向け。ログイン不要で、駐車場IDごとに区分別の台数だけを返す。公開時間外は台数を null にする。"""
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Cache-Control"] = "public, max-age=15"
-    return read_counts(session)
+    if is_public_open(datetime.now(JST)):
+        return PublicParkingLots(open=True, lots=read_counts(session))
+    hidden = {parking_id: dict.fromkeys(kinds) for parking_id, kinds in PARKING_LOTS.items()}
+    return PublicParkingLots(open=False, lots=hidden)
