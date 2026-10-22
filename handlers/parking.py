@@ -1,14 +1,18 @@
 import os
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Literal
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
+from sqlalchemy import delete
 from sqlalchemy.dialects.sqlite import insert
-from sqlmodel import Session, select
+from sqlalchemy.exc import IntegrityError
+from sqlmodel import Session, col, select
 
 from db import get_session
-from db.parking import ParkingSpaceCount
+from db.parking import ParkingCountChange, ParkingSpaceCount
 from handlers.auth import SESSION_COOKIE
 from lib import pk
 
@@ -27,6 +31,9 @@ PARKING_LOTS: dict[str, dict[SpaceKind, int | None]] = {
     "library-rear": {"general": 65, "accessible": 2},
     "campus-road": {"general": None},
 }
+
+# 変更IDを覚えておく秒数。これより古い再送は届かない前提で消す。
+CHANGE_ID_TTL = 86400
 
 # 夏時間がないので固定オフセットで扱い、コンテナのタイムゾーンデータに依存しない。
 JST = timezone(timedelta(hours=9), "JST")
@@ -60,13 +67,17 @@ def require_user(request: Request, session: SessionDep) -> None:
 parking = APIRouter(tags=["parking"], dependencies=[Depends(require_user)])
 
 
-class ParkingLotUpdate(BaseModel):
-    """変更する区分だけを送る。その駐車場にない区分は受け付けない。"""
+class ParkingLotChange(BaseModel):
+    """変更する区分の増減と、変更を始めたときに見ていた台数を送る。
+
+    request_id は変更ごとに作り、同じ変更を送り直すときは同じ値を使う。
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    general: int | None = Field(default=None, ge=0)
-    accessible: int | None = Field(default=None, ge=0)
+    request_id: UUID
+    expected: dict[SpaceKind, int]
+    changes: dict[SpaceKind, int]
 
 
 def read_counts(session: Session) -> ParkingCounts:
@@ -87,26 +98,49 @@ def get_parking_lots(response: Response, session: SessionDep) -> ParkingCounts:
     return read_counts(session)
 
 
-@parking.put("/parking-lots/{parking_id}")
-def update_parking_lot(
+@parking.post("/parking-lots/{parking_id}/changes")
+def change_parking_lot(
     parking_id: str,
-    data: ParkingLotUpdate,
+    data: ParkingLotChange,
     response: Response,
     session: SessionDep,
 ) -> dict[SpaceKind, int]:
-    """区分ごとに1行だけ持ち、同時に初回保存されても重複しないよう upsert する。"""
+    """今の台数に増減を足す。
+
+    見ていた台数から他の人が変えていたら保存しない。同じ車を2人で記録したのか、
+    別々の車なのかはシステムでは区別できないため、画面で確認してから送り直してもらう。
+    変更IDを先に書き込むと SQLite の書き込みロックが取れるため、
+    台数を読んでから書き込むまでの間に、他の変更は割り込めない。
+    """
     capacities = PARKING_LOTS.get(parking_id)
     if capacities is None:
         raise HTTPException(status_code=404, detail="Parking lot not found")
-    updates: dict[SpaceKind, int] = data.model_dump(exclude_none=True)
-    if not updates or not updates.keys() <= capacities.keys():
+    changes = data.changes
+    if not changes or not changes.keys() <= capacities.keys() or data.expected.keys() != changes.keys():
         raise HTTPException(status_code=422, detail="Invalid parking space kind")
-    for kind, count in updates.items():
-        capacity = capacities[kind]
-        if capacity is not None and count > capacity:
-            raise HTTPException(status_code=422, detail="Exceeds parking capacity")
 
-    for kind, count in updates.items():
+    now = int(time.time())
+    session.add(ParkingCountChange(request_id=data.request_id, created_at=now))
+    try:
+        session.flush()
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(status_code=409, detail="Change already applied") from None
+    session.exec(
+        delete(ParkingCountChange).where(col(ParkingCountChange.created_at) < now - CHANGE_ID_TTL),
+    )
+
+    current = read_counts(session)[parking_id]
+    if any(current[kind] != data.expected[kind] for kind in changes):
+        session.rollback()
+        raise HTTPException(status_code=409, detail="Changed by another user")
+    for kind, change in changes.items():
+        count = current[kind] + change
+        capacity = capacities[kind]
+        if count < 0 or (capacity is not None and count > capacity):
+            session.rollback()
+            raise HTTPException(status_code=409, detail="Parking count out of range")
+        # 区分ごとに1行だけ持ち、同時に初回保存されても重複しないよう upsert する
         session.exec(
             insert(ParkingSpaceCount)
             .values(parking_id=parking_id, kind=kind, count=count)

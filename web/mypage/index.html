@@ -8,8 +8,8 @@
     <link rel="apple-touch-icon" href="/images/touch-icon.png" />
     <link rel="stylesheet" href="/lib/dads-components-bundle.css" />
     <script src="/lib/dads-components-bundle.js"></script>
-    <link rel="stylesheet" href="/auth.css?v=17" />
-    <script type="module" src="/js/auth.mjs?v=12"></script>
+    <link rel="stylesheet" href="/auth.css?v=18" />
+    <script type="module" src="/js/auth.mjs?v=14"></script>
     <style>
       body {
         font-family: "Noto Sans JP", sans-serif;
@@ -106,15 +106,18 @@
               <div class="parking-counter" data-kind="general">
                 <span class="parking-counter-label">一般</span>
                 <button type="button" class="dads-button" data-size="sm" data-type="outline" data-step="-1" aria-label="一般を1台減らす">−</button>
-                <output class="parking-counter-value" aria-live="polite" aria-label="一般の台数">0</output>
+                <output class="parking-counter-value" aria-label="一般の増減">0</output>
                 <button type="button" class="dads-button" data-size="sm" data-type="outline" data-step="1" aria-label="一般を1台増やす">＋</button>
+                <span class="parking-counter-detail"></span>
               </div>
               <div class="parking-counter" data-kind="accessible">
                 <span class="parking-counter-label">身障</span>
                 <button type="button" class="dads-button" data-size="sm" data-type="outline" data-step="-1" aria-label="身障を1台減らす">−</button>
-                <output class="parking-counter-value" aria-live="polite" aria-label="身障の台数">0</output>
+                <output class="parking-counter-value" aria-label="身障の増減">0</output>
                 <button type="button" class="dads-button" data-size="sm" data-type="outline" data-step="1" aria-label="身障を1台増やす">＋</button>
+                <span class="parking-counter-detail"></span>
               </div>
+              <p id="parking-count-message" class="auth-error" role="alert" hidden></p>
             </div>
 
             <div class="dads-modal-dialog__actions parking-dialog-actions">

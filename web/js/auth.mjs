@@ -1,9 +1,11 @@
-import { initParking } from "./parking.mjs?v=5";
+import { initParking } from "./parking.mjs?v=7";
 
 const messages = {
   "Invalid invitation code": "招待コードが一致しません。確認してもう一度入力してください。",
   "Registration is disabled": "現在、新規登録を受け付けていません。管理者にお問い合わせください。",
-  "Exceeds parking capacity": "最大台数を超えています。再読み込みしてからもう一度お試しください。",
+  "Parking count out of range": "0台未満か最大台数を超えるため保存できません。台数を確認してください。",
+  "Change already applied": "この変更はすでに保存されています。台数を確認してください。",
+  "Changed by another user": "他の人が先に台数を変更しました。",
   "Invalid parking space kind": "台数を保存できませんでした。再読み込みしてからもう一度お試しください。",
   "Username already exists": "このニックネームは使用されています。別の名前を入力してください。",
   "Username or passkey already exists": "このニックネームまたはパスキーは登録済みです。",
@@ -87,10 +89,10 @@ export async function api(path, options = {}) {
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    const message = typeof error.detail === "string" ? messages[error.detail] : null;
-    throw new Error(message || (response.status === 422
+    const detail = typeof error.detail === "string" ? error.detail : null;
+    throw Object.assign(new Error(messages[detail] || (response.status === 422
       ? "入力内容を確認してください。ニックネームは100文字以内の文字・数字・_・.・-で指定してください。"
-      : "処理に失敗しました。しばらくしてからもう一度お試しください。"));
+      : "処理に失敗しました。しばらくしてからもう一度お試しください。")), { detail });
   }
   return response;
 }
@@ -180,7 +182,7 @@ async function loadProfile() {
   const user = await response.json();
   document.querySelector("#username").textContent = user.display_name || user.username;
   document.querySelector("#account-content").hidden = false;
-  initParking({ api, showError });
+  initParking({ api, showError, errorMessage });
 }
 
 if (typeof document !== "undefined") {

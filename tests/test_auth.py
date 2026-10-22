@@ -9,6 +9,7 @@ from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any, TypedDict
 from unittest.mock import patch
+from uuid import uuid4
 
 import cbor2
 from cryptography.hazmat.primitives import hashes
@@ -205,6 +206,19 @@ class AuthTests(unittest.TestCase):
         self.client.cookies.set(auth_handlers.SESSION_COOKIE, token, path="/")
         self.assertEqual(self.client.get("/auth/user/me").status_code, 401)
 
+    def change_parking_lot(
+        self,
+        parking_id: str,
+        expected: dict[str, int],
+        changes: dict[str, int],
+        request_id: str | None = None,
+        client: TestClient | None = None,
+    ) -> Response:
+        return (client or self.client).post(
+            f"/parking-lots/{parking_id}/changes",
+            json={"request_id": request_id or str(uuid4()), "expected": expected, "changes": changes},
+        )
+
     def test_parking_lot_values_are_shared_and_require_login(self) -> None:
         self.register()
         initial = self.client.get("/parking-lots")
@@ -213,41 +227,73 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(initial.json()["parking-4"], {"general": 0, "accessible": 0})
         self.assertEqual(initial.json()["campus-road"], {"general": 0})
         self.assertNotIn("gym-rear", initial.json())
-        for body in [{"general": -1}, {}, {"accessible": 1}, {"count": 1}]:
+        for body in [
+            {"request_id": str(uuid4()), "expected": {}, "changes": {}},
+            {"request_id": str(uuid4()), "expected": {"accessible": 0}, "changes": {"accessible": 1}},
+            {"request_id": str(uuid4()), "expected": {}, "changes": {"general": 1}},
+            {"request_id": "not-a-uuid", "expected": {"general": 0}, "changes": {"general": 1}},
+            {"expected": {"general": 0}, "changes": {"general": 1}},
+            {"request_id": str(uuid4()), "expected": {"general": 0}, "changes": {"general": 1}, "count": 1},
+        ]:
             with self.subTest(body=body):
                 self.assertEqual(
-                    self.client.put("/parking-lots/parking-1", json=body).status_code,
+                    self.client.post("/parking-lots/parking-1/changes", json=body).status_code,
                     422,
                 )
         self.assertEqual(
-            self.client.put("/parking-lots/not-a-parking-lot", json={"general": 8}).status_code,
+            self.change_parking_lot("not-a-parking-lot", {"general": 0}, {"general": 8}).status_code,
             404,
         )
-        updated = self.client.put("/parking-lots/parking-1", json={"general": 47})
+        updated = self.change_parking_lot("parking-1", {"general": 0}, {"general": 47})
         self.assertEqual(updated.status_code, 200)
         self.assertEqual(updated.json(), {"general": 47})
-        updated = self.client.put("/parking-lots/parking-4", json={"general": 5, "accessible": 2})
+        updated = self.change_parking_lot(
+            "parking-4", {"general": 0, "accessible": 0}, {"general": 5, "accessible": 2},
+        )
         self.assertEqual(updated.json(), {"general": 5, "accessible": 2})
-        updated = self.client.put("/parking-lots/parking-4", json={"accessible": 1})
+        updated = self.change_parking_lot("parking-4", {"accessible": 2}, {"accessible": -1})
         self.assertEqual(updated.json(), {"general": 5, "accessible": 1})
-        # 最大台数ちょうどは保存でき、超えると拒否する。最大台数が未定なら上限なし
+        # 最大台数ちょうどは保存でき、超えたり0台未満になったりすると拒否する。最大台数が未定なら上限なし
         self.assertEqual(
-            self.client.put("/parking-lots/library-rear", json={"general": 65, "accessible": 2}).status_code,
+            self.change_parking_lot(
+                "library-rear", {"general": 0, "accessible": 0}, {"general": 65, "accessible": 2},
+            ).status_code,
             200,
         )
-        for parking_id, body in [
-            ("parking-1", {"general": 66}),
-            ("parking-4", {"accessible": 5}),
-            ("library-rear", {"general": 0, "accessible": 3}),
+        for parking_id, expected, changes in [
+            ("parking-1", {"general": 47}, {"general": 19}),
+            ("parking-4", {"accessible": 1}, {"accessible": 4}),
+            ("library-rear", {"general": 65, "accessible": 2}, {"general": -65, "accessible": 1}),
+            ("parking-1", {"general": 47}, {"general": -48}),
         ]:
-            with self.subTest(parking_id=parking_id, body=body):
-                exceeded = self.client.put(f"/parking-lots/{parking_id}", json=body)
-                self.assertEqual(exceeded.status_code, 422)
-                self.assertEqual(exceeded.json()["detail"], "Exceeds parking capacity")
+            with self.subTest(parking_id=parking_id, changes=changes):
+                rejected = self.change_parking_lot(parking_id, expected, changes)
+                self.assertEqual(rejected.status_code, 409)
+                self.assertEqual(rejected.json()["detail"], "Parking count out of range")
         self.assertEqual(self.client.get("/parking-lots").json()["library-rear"], {"general": 65, "accessible": 2})
         self.assertEqual(
-            self.client.put("/parking-lots/campus-road", json={"general": 500}).status_code,
+            self.change_parking_lot("campus-road", {"general": 0}, {"general": 500}).status_code,
             200,
+        )
+
+        # 送り直された同じ変更は2回足さない
+        request_id = str(uuid4())
+        self.assertEqual(
+            self.change_parking_lot("campus-road", {"general": 500}, {"general": -1}, request_id).json(),
+            {"general": 499},
+        )
+        again = self.change_parking_lot("campus-road", {"general": 500}, {"general": -1}, request_id)
+        self.assertEqual(again.status_code, 409)
+        self.assertEqual(again.json()["detail"], "Change already applied")
+        # 見ていた台数から他の人が変えていたら保存しない。確認後は同じ変更IDで送り直せる
+        request_id = str(uuid4())
+        stale = self.change_parking_lot("campus-road", {"general": 500}, {"general": -1}, request_id)
+        self.assertEqual(stale.status_code, 409)
+        self.assertEqual(stale.json()["detail"], "Changed by another user")
+        self.assertEqual(self.client.get("/parking-lots").json()["campus-road"], {"general": 499})
+        self.assertEqual(
+            self.change_parking_lot("campus-road", {"general": 499}, {"general": -1}, request_id).json(),
+            {"general": 498},
         )
 
         with TestClient(
@@ -291,7 +337,7 @@ class AuthTests(unittest.TestCase):
                 self.assertEqual(public["lots"].keys(), parking_handlers.PARKING_LOTS.keys())
                 self.assertEqual(public["lots"]["parking-4"], {"general": None, "accessible": None})
             self.assertEqual(
-                guest.put("/parking-lots/parking-1", json={"general": 9}).status_code,
+                self.change_parking_lot("parking-1", {"general": 47}, {"general": 1}, client=guest).status_code,
                 401,
             )
 

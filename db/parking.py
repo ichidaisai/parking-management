@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from sqlalchemy import CheckConstraint
 from sqlmodel import Field, SQLModel
 
@@ -14,3 +16,12 @@ class ParkingSpaceCount(SQLModel, table=True):
     parking_id: str = Field(primary_key=True, max_length=64)
     kind: str = Field(primary_key=True, max_length=16)
     count: int = Field(default=0)
+
+
+class ParkingCountChange(SQLModel, table=True):
+    """適用済みの変更ID。再送された同じ変更を2回足さないために使う。"""
+
+    __tablename__ = "parking_count_changes"
+
+    request_id: UUID = Field(primary_key=True)
+    created_at: int = Field(index=True)
